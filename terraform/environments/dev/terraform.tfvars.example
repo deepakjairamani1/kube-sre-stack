@@ -1,0 +1,12 @@
+# AWS Configuration
+aws_region = "us-west-2"
+
+# VPC Configuration
+vpc_cidr = "10.0.0.0/16"
+
+# EKS Configuration
+cluster_version  = "1.29"
+enable_karpenter = true
+
+# Observability
+grafana_admin_password = "CHANGE_ME_TO_SECURE_PASSWORD"

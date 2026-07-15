@@ -1,0 +1,156 @@
+# Custom Prometheus Helm Values for SRE-focused Monitoring
+# These values are used by the kube-prometheus-stack Helm chart
+# and provide an SRE-opinionated configuration.
+---
+# Custom PrometheusRules for SLO-based alerting
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: sre-slo-rules
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # SLO: API Availability (target: 99.9%)
+    - name: slo.api.availability
+      interval: 30s
+      rules:
+        # Error ratio (5xx responses / total responses)
+        - record: slo:api_error_ratio:rate5m
+          expr: |
+            sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+
+        # Availability (1 - error ratio)
+        - record: slo:api_availability:rate5m
+          expr: 1 - slo:api_error_ratio:rate5m
+
+        # 1h burn rate for fast alerting
+        - record: slo:api_error_budget_burn_rate:1h
+          expr: |
+            sum(rate(http_requests_total{status=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total[1h]))
+            / 0.001
+
+        # 6h burn rate for slower alerts
+        - record: slo:api_error_budget_burn_rate:6h
+          expr: |
+            sum(rate(http_requests_total{status=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total[6h]))
+            / 0.001
+
+        # Multi-window, multi-burn-rate alert (page)
+        - alert: SLOApiAvailabilityBurnRateHigh
+          expr: |
+            slo:api_error_budget_burn_rate:1h > 14.4
+            and
+            slo:api_error_budget_burn_rate:6h > 6
+          for: 2m
+          labels:
+            severity: critical
+            slo: api-availability
+            team: platform
+          annotations:
+            summary: "API availability SLO burn rate is critically high"
+            description: |
+              The API error budget is being consumed at {{ $value }}x the allowed rate.
+              At this rate, the entire monthly error budget will be exhausted in less than 2 hours.
+              1h burn rate: {{ with printf "slo:api_error_budget_burn_rate:1h" | query }}{{ . | first | value | humanize }}{{ end }}x
+            runbook_url: "https://github.com/deepakjairamani/kube-sre-stack/docs/runbooks/api-availability.md"
+
+        # Slower burn rate alert (ticket)
+        - alert: SLOApiAvailabilityBurnRateMedium
+          expr: |
+            slo:api_error_budget_burn_rate:6h > 6
+          for: 15m
+          labels:
+            severity: warning
+            slo: api-availability
+            team: platform
+          annotations:
+            summary: "API availability SLO burn rate is elevated"
+            description: |
+              The API error budget is being consumed at {{ $value }}x the allowed rate.
+              6h burn rate is elevated - investigate before it becomes critical.
+            runbook_url: "https://github.com/deepakjairamani/kube-sre-stack/docs/runbooks/api-availability.md"
+
+    # SLO: API Latency (target: p99 < 500ms for 99.5% of requests)
+    - name: slo.api.latency
+      interval: 30s
+      rules:
+        - record: slo:api_latency_p99:5m
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket[5m])) by (le)
+            )
+
+        - record: slo:api_latency_slo_violation_ratio:5m
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{le="0.5"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count[5m]))
+
+        - alert: SLOApiLatencyBudgetBurn
+          expr: |
+            (1 - slo:api_latency_slo_violation_ratio:5m) > (14.4 * 0.005)
+          for: 2m
+          labels:
+            severity: critical
+            slo: api-latency
+            team: platform
+          annotations:
+            summary: "API latency SLO is being breached"
+            description: |
+              More than {{ $value | humanizePercentage }} of requests exceed the 500ms SLO target.
+              P99 latency: {{ with printf "slo:api_latency_p99:5m" | query }}{{ . | first | value | humanize }}s{{ end }}
+            runbook_url: "https://github.com/deepakjairamani/kube-sre-stack/docs/runbooks/api-latency.md"
+
+    # Infrastructure Health
+    - name: sre.infrastructure
+      rules:
+        - alert: NodeNotReady
+          expr: kube_node_status_condition{condition="Ready",status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Kubernetes node {{ $labels.node }} is not ready"
+            description: "Node {{ $labels.node }} has been in NotReady state for 5 minutes."
+
+        - alert: PodCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 5 > 0
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+            description: "Pod has restarted {{ $value }} times in the last 15 minutes."
+
+        - alert: PersistentVolumeSpaceLow
+          expr: |
+            kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.1
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "PV {{ $labels.persistentvolumeclaim }} is running low on space"
+            description: "Volume has less than 10% space remaining ({{ $value | humanizePercentage }} free)."
+
+        - alert: KarpenterNodePoolNearCapacity
+          expr: |
+            karpenter_nodepool_usage{resource_type="cpu"} / karpenter_nodepool_limit{resource_type="cpu"} > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Karpenter NodePool {{ $labels.nodepool }} is near CPU capacity"
+            description: "NodePool is at {{ $value | humanizePercentage }} of its CPU limit."
