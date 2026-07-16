@@ -1,0 +1,240 @@
+# Application-Level Alerting Rules
+# Covers: HTTP errors, latency, saturation, throughput (Golden Signals)
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: application-alerts
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # =========================================================================
+    # GOLDEN SIGNAL: ERRORS
+    # =========================================================================
+    - name: golden.errors
+      rules:
+        - alert: HighHTTPErrorRate
+          expr: |
+            (
+              sum by(namespace, service) (rate(http_requests_total{code=~"5.."}[5m]))
+              /
+              sum by(namespace, service) (rate(http_requests_total[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} in {{ $labels.namespace }} has >5% error rate"
+            description: "HTTP 5xx error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}."
+            action: "Check application logs: kubectl logs -l app={{ $labels.service }} -n {{ $labels.namespace }} --tail=100"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/high-error-rate.md"
+
+        - alert: HighHTTPErrorRateCritical
+          expr: |
+            (
+              sum by(namespace, service) (rate(http_requests_total{code=~"5.."}[5m]))
+              /
+              sum by(namespace, service) (rate(http_requests_total[5m]))
+            ) > 0.15
+          for: 2m
+          labels:
+            severity: critical
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} error rate CRITICAL at {{ $value | humanizePercentage }}"
+            description: "More than 15% of requests are failing with 5xx errors."
+            impact: "Significant user impact. Features are broken for majority of users."
+            action: "Check for bad deployment, database connectivity, dependency failures"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/high-error-rate.md"
+
+        - alert: HTTP4xxSpike
+          expr: |
+            (
+              sum by(namespace, service) (rate(http_requests_total{code=~"4.."}[5m]))
+              /
+              sum by(namespace, service) (rate(http_requests_total[5m]))
+            ) > 0.25
+          for: 10m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} has >25% 4xx responses"
+            description: "High client error rate may indicate API breaking change or bot traffic."
+            action: "Check for recent API changes, validate request patterns"
+
+    # =========================================================================
+    # GOLDEN SIGNAL: LATENCY
+    # =========================================================================
+    - name: golden.latency
+      rules:
+        - alert: HighP99Latency
+          expr: |
+            histogram_quantile(0.99, sum by(le, namespace, service) (rate(http_request_duration_seconds_bucket[5m]))) > 2
+          for: 10m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} p99 latency above 2s"
+            description: "99th percentile latency for {{ $labels.service }} is {{ $value | humanizeDuration }}."
+            action: "Profile slow endpoints. Check database query performance, connection pools."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/high-latency.md"
+
+        - alert: HighP99LatencyCritical
+          expr: |
+            histogram_quantile(0.99, sum by(le, namespace, service) (rate(http_request_duration_seconds_bucket[5m]))) > 5
+          for: 5m
+          labels:
+            severity: critical
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} p99 latency critically high at {{ $value | humanizeDuration }}"
+            description: "Requests are taking over 5 seconds. Users are likely timing out."
+            impact: "User-facing degradation. Timeouts and retries causing cascading load."
+            action: "Check for: connection pool exhaustion, deadlocks, external dependency timeout"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/high-latency.md"
+
+        - alert: LatencyIncreaseSudden
+          expr: |
+            (
+              histogram_quantile(0.95, sum by(le, namespace, service) (rate(http_request_duration_seconds_bucket[5m])))
+              /
+              histogram_quantile(0.95, sum by(le, namespace, service) (rate(http_request_duration_seconds_bucket[1h])))
+            ) > 3
+          for: 5m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "{{ $labels.service }} latency jumped 3x in last 5 minutes"
+            description: "P95 latency increased by {{ $value }}x compared to the last hour average. Possible deployment or dependency issue."
+            action: "Correlate with recent deployments: check ArgoCD sync history"
+
+    # =========================================================================
+    # GOLDEN SIGNAL: SATURATION
+    # =========================================================================
+    - name: golden.saturation
+      rules:
+        - alert: ContainerCPUThrottling
+          expr: |
+            (
+              sum by(namespace, pod, container) (rate(container_cpu_cfs_throttled_periods_total[5m]))
+              /
+              sum by(namespace, pod, container) (rate(container_cpu_cfs_periods_total[5m]))
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            category: saturation
+          annotations:
+            summary: "Container {{ $labels.container }} in {{ $labels.pod }} is heavily throttled"
+            description: "CPU throttling at {{ $value | humanizePercentage }}. Requests are queuing."
+            action: "Increase CPU limits or optimize application CPU usage"
+
+        - alert: ContainerMemoryNearLimit
+          expr: |
+            (
+              container_memory_working_set_bytes
+              /
+              container_spec_memory_limit_bytes
+            ) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            category: saturation
+          annotations:
+            summary: "Container {{ $labels.container }} in {{ $labels.pod }} near memory limit"
+            description: "Memory usage is {{ $value | humanizePercentage }} of limit. OOMKill likely."
+            action: "Check for memory leaks. Increase memory limit if legitimate growth."
+
+        - alert: ContainerOOMKilled
+          expr: |
+            kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+          for: 0m
+          labels:
+            severity: critical
+            category: saturation
+          annotations:
+            summary: "Container {{ $labels.container }} in {{ $labels.namespace }}/{{ $labels.pod }} was OOMKilled"
+            description: "Container was terminated due to exceeding memory limits."
+            impact: "Application restart, potential request failures during restart"
+            action: "Increase memory limits or fix memory leak. Check heap dumps."
+
+    # =========================================================================
+    # GOLDEN SIGNAL: TRAFFIC
+    # =========================================================================
+    - name: golden.traffic
+      rules:
+        - alert: TrafficDropSudden
+          expr: |
+            (
+              sum by(namespace, service) (rate(http_requests_total[5m]))
+              /
+              sum by(namespace, service) (rate(http_requests_total[1h]))
+            ) < 0.3
+          for: 5m
+          labels:
+            severity: critical
+            category: traffic
+          annotations:
+            summary: "{{ $labels.service }} traffic dropped by 70%+ in 5 minutes"
+            description: "Current RPS is only {{ $value | humanizePercentage }} of the hourly average. Possible routing issue or upstream failure."
+            impact: "Service may be unreachable. Revenue impact likely."
+            action: "Check ingress, DNS, load balancer health. Verify upstream services."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/traffic-drop.md"
+
+        - alert: TrafficSpike
+          expr: |
+            (
+              sum by(namespace, service) (rate(http_requests_total[5m]))
+              /
+              sum by(namespace, service) (rate(http_requests_total[1h]))
+            ) > 5
+          for: 5m
+          labels:
+            severity: warning
+            category: traffic
+          annotations:
+            summary: "{{ $labels.service }} traffic spiked 5x above normal"
+            description: "Traffic is {{ $value }}x the hourly average. May be legitimate or attack."
+            action: "Check if traffic is legitimate (marketing event?) or malicious (DDoS). Review WAF logs."
+
+    # =========================================================================
+    # DEPENDENCY HEALTH
+    # =========================================================================
+    - name: dependencies
+      rules:
+        - alert: DatabaseConnectionPoolExhausted
+          expr: |
+            (
+              sum by(namespace, service) (db_connections_active)
+              /
+              sum by(namespace, service) (db_connections_max)
+            ) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            category: dependency
+          annotations:
+            summary: "{{ $labels.service }} database connection pool >90% used"
+            description: "Only {{ $value | humanizePercentage }} headroom remaining in DB connection pool."
+            impact: "New requests will queue or fail when pool is exhausted"
+            action: "Check for connection leaks, long-running queries, or increase pool size"
+
+        - alert: ExternalDependencyDown
+          expr: |
+            probe_success{job="blackbox"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            category: dependency
+          annotations:
+            summary: "External dependency {{ $labels.instance }} is unreachable"
+            description: "Blackbox probe to {{ $labels.instance }} has been failing for 3 minutes."
+            impact: "Features depending on this service are degraded or broken"
+            action: "Check dependency status page. Activate circuit breaker if available."

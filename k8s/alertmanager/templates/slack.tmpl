@@ -1,0 +1,66 @@
+{{ define "slack.title" -}}
+[{{ .Status | toUpper }}{{ if eq .Status "firing" }} × {{ .Alerts.Firing | len }}{{ end }}] {{ .CommonLabels.alertname }}
+{{- end }}
+
+{{ define "slack.text" -}}
+{{ range .Alerts }}
+*Alert:* {{ .Labels.alertname }}
+*Severity:* `{{ .Labels.severity }}`
+*Namespace:* {{ .Labels.namespace | default "cluster-wide" }}
+*Service:* {{ .Labels.service | default "N/A" }}
+{{ if .Annotations.summary }}*Summary:* {{ .Annotations.summary }}{{ end }}
+{{ if .Annotations.description }}*Description:* {{ .Annotations.description }}{{ end }}
+*Started:* {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+{{ if .EndsAt }}*Ended:* {{ .EndsAt.Format "2006-01-02 15:04:05 UTC" }}{{ end }}
+---
+{{ end }}
+{{- end }}
+
+{{ define "slack.critical.text" -}}
+{{ range .Alerts }}
+🔥 *{{ .Labels.alertname }}* is *{{ .Status | toUpper }}*
+
+*Severity:* `CRITICAL`
+*Namespace:* {{ .Labels.namespace | default "cluster-wide" }}
+*Service:* {{ .Labels.service | default "N/A" }}
+*Node:* {{ .Labels.node | default "N/A" }}
+
+{{ if .Annotations.summary }}📋 *Summary:* {{ .Annotations.summary }}{{ end }}
+{{ if .Annotations.description }}📝 *Details:* {{ .Annotations.description }}{{ end }}
+{{ if .Annotations.impact }}💥 *Impact:* {{ .Annotations.impact }}{{ end }}
+{{ if .Annotations.action }}🔧 *Action Required:* {{ .Annotations.action }}{{ end }}
+
+*Firing since:* {{ .StartsAt.Format "2006-01-02 15:04:05 UTC" }}
+---
+{{ end }}
+{{- end }}
+
+{{ define "slack.slo.text" -}}
+{{ range .Alerts }}
+*SLO:* {{ .Labels.slo_name }}
+*Current Burn Rate:* {{ .Labels.burn_rate | default "N/A" }}x
+*Window:* {{ .Labels.window | default "N/A" }}
+*Error Budget Remaining:* {{ .Annotations.error_budget_remaining | default "unknown" }}
+
+{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ end }}
+
+{{ if eq .Status "firing" -}}
+⏰ At this burn rate, error budget will be exhausted in {{ .Annotations.budget_exhaustion_time | default "unknown" }}
+{{- end }}
+---
+{{ end }}
+{{- end }}
+
+{{ define "slack.silence_url" -}}
+{{ .ExternalURL }}/#/silences/new?filter=%7B{{ range .CommonLabels.SortedPairs }}{{ .Name }}%3D%22{{ .Value }}%22%2C{{ end }}%7D
+{{- end }}
+
+{{ define "pagerduty.description" -}}
+[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}: {{ (index .Alerts 0).Annotations.summary }}
+{{- end }}
+
+{{ define "pagerduty.firing" -}}
+{{ range .Alerts.Firing }}
+• {{ .Labels.alertname }} in {{ .Labels.namespace | default "cluster" }} — {{ .Annotations.summary }}
+{{ end }}
+{{- end }}

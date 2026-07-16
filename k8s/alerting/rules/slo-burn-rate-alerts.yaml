@@ -1,0 +1,244 @@
+# SLO-Based Alerting Rules
+# Implements Multi-Window Multi-Burn-Rate (MWMBR) alerts
+# Reference: Google SRE Workbook Chapter 5
+#
+# Strategy:
+# - Fast burn (14.4x) over short window (1h/5m) → Page immediately
+# - Medium burn (6x) over medium window (6h/30m) → Page
+# - Slow burn (3x) over long window (3d/6h) → Ticket
+# - Very slow burn (1x) over full window (30d/3d) → Low-priority ticket
+#
+# This catches both sudden spikes AND gradual degradation.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: slo-burn-rate-alerts
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # =========================================================================
+    # API AVAILABILITY SLO: 99.9% (43.8 min/month error budget)
+    # =========================================================================
+    - name: slo.api.availability
+      rules:
+        # --- Recording rules for burn rate calculation ---
+        - record: slo:api_availability:error_rate_5m
+          expr: |
+            sum(rate(http_requests_total{code=~"5.."}[5m]))
+            /
+            sum(rate(http_requests_total[5m]))
+
+        - record: slo:api_availability:error_rate_30m
+          expr: |
+            sum(rate(http_requests_total{code=~"5.."}[30m]))
+            /
+            sum(rate(http_requests_total[30m]))
+
+        - record: slo:api_availability:error_rate_1h
+          expr: |
+            sum(rate(http_requests_total{code=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total[1h]))
+
+        - record: slo:api_availability:error_rate_6h
+          expr: |
+            sum(rate(http_requests_total{code=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total[6h]))
+
+        - record: slo:api_availability:error_rate_3d
+          expr: |
+            sum(rate(http_requests_total{code=~"5.."}[3d]))
+            /
+            sum(rate(http_requests_total[3d]))
+
+        # Error budget: 0.1% (1 - 0.999)
+        # Burn rate = error_rate / error_budget
+
+        # --- FAST BURN: 14.4x over 1h (consumes 2% budget/hour) ---
+        - alert: SLOAvailabilityFastBurn
+          expr: |
+            (
+              slo:api_availability:error_rate_1h > (14.4 * 0.001)
+              and
+              slo:api_availability:error_rate_5m > (14.4 * 0.001)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            type: slo_burn_rate
+            slo_name: api-availability
+            burn_rate: "14.4"
+            window: "1h/5m"
+          annotations:
+            summary: "API availability SLO burning fast — 14.4x burn rate"
+            description: "Error rate is {{ $value | humanizePercentage }} (threshold: 1.44%). At this rate, entire monthly error budget will be consumed in ~2 hours."
+            error_budget_remaining: "< 2 hours at current rate"
+            budget_exhaustion_time: "~2 hours"
+            action: "Immediate investigation required. Check recent deployments, dependency health."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/slo-fast-burn.md"
+            dashboard_url: "https://grafana.example.com/d/slo-overview"
+
+        # --- MEDIUM BURN: 6x over 6h (consumes 5% budget in 6h) ---
+        - alert: SLOAvailabilityMediumBurn
+          expr: |
+            (
+              slo:api_availability:error_rate_6h > (6 * 0.001)
+              and
+              slo:api_availability:error_rate_30m > (6 * 0.001)
+            )
+          for: 5m
+          labels:
+            severity: critical
+            type: slo_burn_rate
+            slo_name: api-availability
+            burn_rate: "6"
+            window: "6h/30m"
+          annotations:
+            summary: "API availability SLO burning — 6x burn rate over 6h"
+            description: "Sustained elevated error rate at {{ $value | humanizePercentage }}. Error budget draining significantly."
+            error_budget_remaining: "< 5 hours at current rate"
+            budget_exhaustion_time: "~5 hours"
+            action: "Investigate degraded dependencies, check for gradual resource exhaustion"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/slo-medium-burn.md"
+
+        # --- SLOW BURN: 3x over 3d (consumes budget over days) ---
+        - alert: SLOAvailabilitySlowBurn
+          expr: |
+            (
+              slo:api_availability:error_rate_3d > (3 * 0.001)
+              and
+              slo:api_availability:error_rate_6h > (3 * 0.001)
+            )
+          for: 30m
+          labels:
+            severity: warning
+            type: slo_burn_rate
+            slo_name: api-availability
+            burn_rate: "3"
+            window: "3d/6h"
+          annotations:
+            summary: "API availability SLO slow burn — 3x rate over 3 days"
+            description: "Gradual degradation detected. Error budget being consumed 3x faster than sustainable."
+            error_budget_remaining: "~10 days at current rate"
+            budget_exhaustion_time: "~10 days"
+            action: "Non-urgent but needs investigation. Check for flaky dependencies or intermittent failures."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/slo-slow-burn.md"
+
+    # =========================================================================
+    # API LATENCY SLO: 99% of requests < 500ms
+    # =========================================================================
+    - name: slo.api.latency
+      rules:
+        - record: slo:api_latency:slow_request_rate_5m
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.5"}[5m]))
+              /
+              sum(rate(http_request_duration_seconds_count[5m]))
+            )
+
+        - record: slo:api_latency:slow_request_rate_1h
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.5"}[1h]))
+              /
+              sum(rate(http_request_duration_seconds_count[1h]))
+            )
+
+        - record: slo:api_latency:slow_request_rate_6h
+          expr: |
+            1 - (
+              sum(rate(http_request_duration_seconds_bucket{le="0.5"}[6h]))
+              /
+              sum(rate(http_request_duration_seconds_count[6h]))
+            )
+
+        # Error budget: 1% (1 - 0.99)
+        # Fast burn: 14.4x → threshold = 14.4 * 0.01 = 14.4% slow requests
+        - alert: SLOLatencyFastBurn
+          expr: |
+            (
+              slo:api_latency:slow_request_rate_1h > (14.4 * 0.01)
+              and
+              slo:api_latency:slow_request_rate_5m > (14.4 * 0.01)
+            )
+          for: 2m
+          labels:
+            severity: critical
+            type: slo_burn_rate
+            slo_name: api-latency-p99
+            burn_rate: "14.4"
+            window: "1h/5m"
+          annotations:
+            summary: "API latency SLO burning fast — >14.4% requests exceeding 500ms"
+            description: "{{ $value | humanizePercentage }} of requests are slower than 500ms. Burn rate is 14.4x."
+            impact: "Users experiencing significant delays. Conversion/engagement likely dropping."
+            action: "Check database queries, upstream dependencies, connection pool exhaustion"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/slo-latency-burn.md"
+
+        - alert: SLOLatencyMediumBurn
+          expr: |
+            (
+              slo:api_latency:slow_request_rate_6h > (6 * 0.01)
+              and
+              slo:api_latency:slow_request_rate_1h > (6 * 0.01)
+            )
+          for: 5m
+          labels:
+            severity: warning
+            type: slo_burn_rate
+            slo_name: api-latency-p99
+            burn_rate: "6"
+            window: "6h/1h"
+          annotations:
+            summary: "API latency degradation — 6% requests exceeding 500ms over 6h"
+            description: "Sustained latency increase. {{ $value | humanizePercentage }} requests are slow."
+            action: "Profile slow endpoints, check for N+1 queries or cache misses"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/slo-latency-burn.md"
+
+    # =========================================================================
+    # ERROR BUDGET STATUS (for dashboards and weekly reviews)
+    # =========================================================================
+    - name: slo.error_budget
+      rules:
+        # How much budget is remaining this month (0 to 1)
+        - record: slo:api_availability:error_budget_remaining
+          expr: |
+            1 - (
+              sum(increase(http_requests_total{code=~"5.."}[30d]))
+              /
+              (sum(increase(http_requests_total[30d])) * 0.001)
+            )
+
+        - alert: SLOErrorBudgetNearlyExhausted
+          expr: |
+            slo:api_availability:error_budget_remaining < 0.1
+          for: 5m
+          labels:
+            severity: critical
+            type: slo_burn_rate
+            slo_name: api-availability
+          annotations:
+            summary: "API availability error budget <10% remaining"
+            description: "Only {{ $value | humanizePercentage }} of monthly error budget remains. Feature freezes should be considered."
+            impact: "Any additional errors will breach SLO. Deployments should be paused."
+            action: "Implement deployment freeze. Focus all engineering effort on reliability."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/error-budget-exhausted.md"
+
+        - alert: SLOErrorBudgetLow
+          expr: |
+            slo:api_availability:error_budget_remaining < 0.25
+          for: 10m
+          labels:
+            severity: warning
+            type: slo_burn_rate
+            slo_name: api-availability
+          annotations:
+            summary: "API availability error budget below 25%"
+            description: "{{ $value | humanizePercentage }} of monthly error budget remaining. Risky deployments should be deferred."
+            action: "Review upcoming deployments for risk. Consider extra canary time."

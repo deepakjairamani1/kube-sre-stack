@@ -1,0 +1,190 @@
+# Infrastructure Alerting Rules
+# Covers: Node health, cluster resources, disk, network
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: infrastructure-alerts
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # =========================================================================
+    # NODE HEALTH
+    # =========================================================================
+    - name: node.health
+      rules:
+        - alert: NodeHighCPU
+          expr: |
+            (1 - avg by(instance, node) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} CPU usage above 85%"
+            description: "CPU utilization is {{ $value | humanizePercentage }} on node {{ $labels.node }} for more than 10 minutes."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-high-cpu.md"
+            dashboard_url: "https://grafana.example.com/d/node-exporter/nodes?var-node={{ $labels.node }}"
+
+        - alert: NodeHighCPUCritical
+          expr: |
+            (1 - avg by(instance, node) (rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 0.95
+          for: 5m
+          labels:
+            severity: critical
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} CPU critically high at {{ $value | humanizePercentage }}"
+            description: "CPU utilization is above 95% on node {{ $labels.node }}. Pods may be throttled or OOMKilled."
+            impact: "Application latency increase, potential pod evictions"
+            action: "Check top CPU consumers: kubectl top pods --sort-by=cpu -A"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-high-cpu.md"
+
+        - alert: NodeHighMemory
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} memory usage above 85%"
+            description: "Memory utilization is {{ $value | humanizePercentage }} on node {{ $labels.node }}."
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-high-memory.md"
+
+        - alert: NodeHighMemoryCritical
+          expr: |
+            (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) > 0.95
+          for: 5m
+          labels:
+            severity: critical
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} memory critically high — OOMKill imminent"
+            description: "Memory usage is {{ $value | humanizePercentage }}. OOMKiller will start terminating processes."
+            impact: "Pod OOMKills, potential node instability"
+            action: "Identify memory-heavy pods: kubectl top pods --sort-by=memory -A"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-high-memory.md"
+
+        - alert: NodeNotReady
+          expr: |
+            kube_node_status_condition{condition="Ready", status="true"} == 0
+          for: 5m
+          labels:
+            severity: critical
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} is NotReady"
+            description: "Node {{ $labels.node }} has been in NotReady state for 5 minutes. Workloads may be rescheduling."
+            impact: "Pods on this node are being evicted. Capacity reduced."
+            action: "kubectl describe node {{ $labels.node }} | grep -A5 Conditions"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-not-ready.md"
+
+        - alert: NodeDiskPressure
+          expr: |
+            (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} disk usage above 85%"
+            description: "Root filesystem on {{ $labels.node }} is {{ $value | humanizePercentage }} full."
+            action: "Check large files and container image cache size"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-disk-pressure.md"
+
+        - alert: NodeDiskWillFillIn24h
+          expr: |
+            predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[6h], 24*3600) < 0
+          for: 30m
+          labels:
+            severity: critical
+            category: infrastructure
+          annotations:
+            summary: "Node {{ $labels.node }} disk will fill within 24 hours"
+            description: "Based on current growth rate, disk on {{ $labels.node }} will be full within 24 hours."
+            impact: "Node will become NotReady when disk is full. All pods evicted."
+            action: "Clean up container images, check log rotation, expand volume"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/node-disk-pressure.md"
+
+    # =========================================================================
+    # KUBERNETES RESOURCES
+    # =========================================================================
+    - name: kubernetes.resources
+      rules:
+        - alert: KubePodCrashLooping
+          expr: |
+            rate(kube_pod_container_status_restarts_total[15m]) * 60 * 5 > 0
+          for: 15m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} is crash looping"
+            description: "Container {{ $labels.container }} in pod {{ $labels.namespace }}/{{ $labels.pod }} has restarted {{ $value | humanize }} times in the last 15 minutes."
+            action: "kubectl logs {{ $labels.pod }} -n {{ $labels.namespace }} -c {{ $labels.container }} --previous"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/runbooks/pod-crash-loop.md"
+
+        - alert: KubePodNotReady
+          expr: |
+            sum by(namespace, pod) (kube_pod_status_phase{phase=~"Pending|Unknown"}) > 0
+          for: 15m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "Pod {{ $labels.namespace }}/{{ $labels.pod }} stuck in {{ $labels.phase }}"
+            description: "Pod has been in non-ready state for more than 15 minutes."
+            action: "kubectl describe pod {{ $labels.pod }} -n {{ $labels.namespace }}"
+
+        - alert: KubeDeploymentReplicasMismatch
+          expr: |
+            kube_deployment_spec_replicas != kube_deployment_status_ready_replicas
+          for: 10m
+          labels:
+            severity: warning
+            category: application
+          annotations:
+            summary: "Deployment {{ $labels.namespace }}/{{ $labels.deployment }} has replica mismatch"
+            description: "Deployment {{ $labels.deployment }} has {{ $value }} unavailable replicas for more than 10 minutes."
+            action: "kubectl rollout status deployment/{{ $labels.deployment }} -n {{ $labels.namespace }}"
+
+        - alert: KubeHPAMaxedOut
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas == kube_horizontalpodautoscaler_spec_max_replicas
+          for: 15m
+          labels:
+            severity: warning
+            category: capacity
+          annotations:
+            summary: "HPA {{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} is at max replicas"
+            description: "HPA has been at maximum replicas ({{ $value }}) for 15 minutes. May need to increase max or optimize resource usage."
+            action: "Review HPA target utilization and consider increasing maxReplicas"
+
+        - alert: KubePersistentVolumeFillingUp
+          expr: |
+            kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.15
+          for: 10m
+          labels:
+            severity: warning
+            category: storage
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is >85% full"
+            description: "PersistentVolume backing {{ $labels.persistentvolumeclaim }} has only {{ $value | humanizePercentage }} free space."
+            action: "Expand PVC or clean up data"
+
+        - alert: KubePersistentVolumeFillingUpCritical
+          expr: |
+            kubelet_volume_stats_available_bytes / kubelet_volume_stats_capacity_bytes < 0.05
+          for: 5m
+          labels:
+            severity: critical
+            category: storage
+          annotations:
+            summary: "PVC {{ $labels.namespace }}/{{ $labels.persistentvolumeclaim }} is >95% full"
+            description: "PersistentVolume has less than 5% free space. Application writes will fail soon."
+            impact: "Database or application will crash when disk is full"
+            action: "Immediately expand PVC or free space"
