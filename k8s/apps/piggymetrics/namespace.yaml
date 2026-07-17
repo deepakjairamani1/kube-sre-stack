@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: piggymetrics
+  labels:
+    app.kubernetes.io/part-of: piggymetrics
+    app.kubernetes.io/managed-by: kustomize
+    networking/allow-monitoring: "true"
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted

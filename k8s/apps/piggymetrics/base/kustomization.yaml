@@ -1,0 +1,50 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: piggymetrics
+
+resources:
+  # Namespace
+  - ../namespace.yaml
+  # MongoDB
+  - mongodb/statefulset.yaml
+  - mongodb/service.yaml
+  # RabbitMQ
+  - rabbitmq/statefulset.yaml
+  - rabbitmq/service.yaml
+  # Config Service
+  - config-service/deployment.yaml
+  - config-service/service.yaml
+  # Registry
+  - registry/deployment.yaml
+  - registry/service.yaml
+  # Auth Service
+  - auth-service/deployment.yaml
+  - auth-service/service.yaml
+  - auth-service/hpa.yaml
+  # Account Service
+  - account-service/deployment.yaml
+  - account-service/service.yaml
+  - account-service/hpa.yaml
+  # Statistics Service
+  - statistics-service/deployment.yaml
+  - statistics-service/service.yaml
+  # Notification Service
+  - notification-service/deployment.yaml
+  - notification-service/service.yaml
+  # Gateway
+  - gateway/deployment.yaml
+  - gateway/service.yaml
+  - gateway/hpa.yaml
+  # Monitoring
+  - monitoring/deployment.yaml
+  - monitoring/service.yaml
+  # Ingress
+  - ingress.yaml
+  # Network Policies
+  - network-policies.yaml
+  # Pod Disruption Budgets
+  - pdbs.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: piggymetrics
