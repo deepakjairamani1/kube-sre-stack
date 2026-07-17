@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: account-service-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/part-of: piggymetrics
+    app.kubernetes.io/component: pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service

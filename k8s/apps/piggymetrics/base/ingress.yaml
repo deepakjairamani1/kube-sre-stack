@@ -1,0 +1,39 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: piggymetrics-ingress
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: piggymetrics-ingress
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: piggymetrics.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway
+                port:
+                  number: 4000
+          - path: /eureka
+            pathType: Prefix
+            backend:
+              service:
+                name: registry
+                port:
+                  number: 8761
+          - path: /hystrix
+            pathType: Prefix
+            backend:
+              service:
+                name: monitoring
+                port:
+                  number: 9000

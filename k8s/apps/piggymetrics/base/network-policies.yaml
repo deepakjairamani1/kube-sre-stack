@@ -1,0 +1,180 @@
+---
+# Default deny all ingress
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# Allow ingress to gateway from external
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-to-gateway
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: 4000
+          protocol: TCP
+---
+# Allow backend services to access MongoDB
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-mongodb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: backend
+      ports:
+        - port: 27017
+          protocol: TCP
+---
+# Allow backend services to access RabbitMQ
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-to-rabbitmq
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: backend
+      ports:
+        - port: 5672
+          protocol: TCP
+        - port: 15672
+          protocol: TCP
+---
+# Allow all pods to access config-service
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-to-config-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: config-service
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8888
+          protocol: TCP
+---
+# Allow all pods to access registry
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-to-registry
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8761
+          protocol: TCP
+---
+# Allow gateway to access backend services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-to-backend
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gateway
+      ports:
+        - port: 5000
+          protocol: TCP
+        - port: 6000
+          protocol: TCP
+        - port: 7000
+          protocol: TCP
+        - port: 8000
+          protocol: TCP
+---
+# Allow monitoring to access all services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-monitoring-access
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: monitoring
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 9000
+          protocol: TCP

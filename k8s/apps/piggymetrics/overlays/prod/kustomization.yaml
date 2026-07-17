@@ -1,0 +1,111 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: piggymetrics-prod
+
+resources:
+  - ../../base
+
+labels:
+  - pairs:
+      env: prod
+    includeSelectors: false
+
+patches:
+  # Increase gateway replicas to 3
+  - target:
+      kind: Deployment
+      name: gateway
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  # Increase auth-service replicas to 2
+  - target:
+      kind: Deployment
+      name: auth-service
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  # Increase account-service replicas to 3
+  - target:
+      kind: Deployment
+      name: account-service
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  # Increase mongodb replicas to 3
+  - target:
+      kind: StatefulSet
+      name: mongodb
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 3
+  # Enable HPAs with production targets
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: gateway-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: auth-service-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 2
+      - op: replace
+        path: /spec/maxReplicas
+        value: 8
+  - target:
+      group: autoscaling
+      version: v2
+      kind: HorizontalPodAutoscaler
+      name: account-service-hpa
+    patch: |
+      - op: replace
+        path: /spec/minReplicas
+        value: 3
+      - op: replace
+        path: /spec/maxReplicas
+        value: 10
+  # Increase PDB minAvailable to 2 for prod
+  - target:
+      group: policy
+      version: v1
+      kind: PodDisruptionBudget
+      name: gateway-pdb
+    patch: |
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
+  - target:
+      group: policy
+      version: v1
+      kind: PodDisruptionBudget
+      name: auth-service-pdb
+    patch: |
+      - op: replace
+        path: /spec/minAvailable
+        value: 2
+  - target:
+      group: policy
+      version: v1
+      kind: PodDisruptionBudget
+      name: account-service-pdb
+    patch: |
+      - op: replace
+        path: /spec/minAvailable
+        value: 2

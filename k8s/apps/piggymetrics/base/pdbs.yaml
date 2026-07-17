@@ -1,0 +1,96 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: mongodb-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+      app.kubernetes.io/component: database
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: auth-service-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+      app.kubernetes.io/component: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: account-service-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+      app.kubernetes.io/component: backend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+      app.kubernetes.io/component: frontend
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: config-service-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: config-service
+    app.kubernetes.io/component: infrastructure
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: config-service
+      app.kubernetes.io/component: infrastructure
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: registry-pdb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/component: infrastructure
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+      app.kubernetes.io/component: infrastructure

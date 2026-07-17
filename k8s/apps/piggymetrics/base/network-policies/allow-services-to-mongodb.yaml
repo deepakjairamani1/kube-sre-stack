@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-services-to-mongodb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/part-of: piggymetrics
+    app.kubernetes.io/component: network-policy
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: account-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: auth-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: statistics-service
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: notification-service
+      ports:
+        - protocol: TCP
+          port: 27017
