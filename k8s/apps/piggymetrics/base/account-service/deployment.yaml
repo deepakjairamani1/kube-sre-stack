@@ -1,0 +1,94 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/component: accounts
+    app.kubernetes.io/part-of: piggymetrics
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+      app.kubernetes.io/part-of: piggymetrics
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: account-service
+        app.kubernetes.io/component: accounts
+        app.kubernetes.io/part-of: piggymetrics
+    spec:
+      serviceAccountName: piggymetrics-account-service
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: wait-for-dependencies
+          image: curlimages/curl:8.4.0
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for config-service..."
+              until curl -sf http://config-service.piggymetrics.svc.cluster.local:8888/actuator/health; do
+                echo "config-service not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "config-service is ready."
+              echo "Waiting for registry..."
+              until curl -sf http://registry.piggymetrics.svc.cluster.local:8761/actuator/health; do
+                echo "registry not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "registry is ready."
+              echo "Waiting for auth-service..."
+              until curl -sf http://auth-service.piggymetrics.svc.cluster.local:5000/actuator/health; do
+                echo "auth-service not ready, retrying in 5s..."
+                sleep 5
+              done
+              echo "auth-service is ready."
+      containers:
+        - name: account-service
+          image: sqshq/piggymetrics-account-service
+          ports:
+            - containerPort: 6000
+              protocol: TCP
+          env:
+            - name: CONFIG_SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: piggymetrics-secrets
+                  key: config-service-password
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: piggymetrics-secrets
+                  key: mongodb-password
+            - name: ACCOUNT_SERVICE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: piggymetrics-secrets
+                  key: account-service-password
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 6000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 6000
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
