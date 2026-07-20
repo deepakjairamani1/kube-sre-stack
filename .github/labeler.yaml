@@ -1,0 +1,38 @@
+# Label rules: map file paths to PR labels
+terraform:
+  - changed-files:
+      - any-glob-to-any-file: "terraform/**"
+
+terragrunt:
+  - changed-files:
+      - any-glob-to-any-file: "terragrunt/**"
+
+kubernetes:
+  - changed-files:
+      - any-glob-to-any-file: "k8s/**"
+
+argocd:
+  - changed-files:
+      - any-glob-to-any-file: "k8s/argocd/**"
+
+alerting:
+  - changed-files:
+      - any-glob-to-any-file: "k8s/alerting/**"
+
+piggymetrics:
+  - changed-files:
+      - any-glob-to-any-file: "k8s/apps/piggymetrics/**"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "docs/**"
+      - any-glob-to-any-file: "**/*.md"
+
+security:
+  - changed-files:
+      - any-glob-to-any-file: "**/network-policies/**"
+      - any-glob-to-any-file: "**/secrets*"
