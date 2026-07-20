@@ -1,0 +1,64 @@
+# Sync Wave Strategy for PiggyMetrics
+#
+# ArgoCD sync waves ensure resources are deployed in dependency order:
+#   Wave -1: Namespace + Secrets + ServiceAccounts
+#   Wave  0: Infrastructure (MongoDB, RabbitMQ, Config, Registry)
+#   Wave  1: Core Services (Auth, Account)
+#   Wave  2: Supporting Services (Statistics, Notification, Monitoring)
+#   Wave  3: Gateway (needs all backends ready)
+#   Wave  4: Ingress + Network Policies (needs gateway ready)
+#   Wave  5: HPAs + PDBs (needs deployments stable first)
+#
+# Apply these annotations to resources in the base manifests.
+# This file serves as documentation and a patch reference.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sync-wave-reference
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: piggymetrics
+data:
+  strategy.md: |
+    # Deployment Order (Sync Waves)
+
+    ## Wave -1: Foundation
+    - Namespace
+    - Secrets (ExternalSecrets)
+    - ServiceAccounts
+    - ConfigMaps
+
+    ## Wave 0: Stateful Infrastructure
+    - MongoDB StatefulSet + Service
+    - RabbitMQ StatefulSet + Service
+    - Config Service (Spring Cloud Config)
+    - Registry (Eureka)
+
+    ## Wave 1: Core Business Services
+    - Auth Service (OAuth2 provider — other services depend on it)
+    - Account Service (primary business logic)
+
+    ## Wave 2: Supporting Services
+    - Statistics Service
+    - Notification Service
+    - Monitoring (Turbine + Hystrix)
+
+    ## Wave 3: API Gateway
+    - Gateway Deployment + Service (routes to all backends)
+
+    ## Wave 4: External Access
+    - Ingress resource
+    - Network Policies
+    - TLS Certificate
+
+    ## Wave 5: Scaling & Disruption
+    - HorizontalPodAutoscalers
+    - PodDisruptionBudgets
+
+    ---
+    To apply: Add annotation to each resource:
+      argocd.argoproj.io/sync-wave: "<number>"
+
+    ArgoCD processes waves in ascending order and waits for
+    health checks to pass before moving to the next wave.

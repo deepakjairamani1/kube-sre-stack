@@ -1,0 +1,125 @@
+# ArgoCD Notifications — Slack Integration
+#
+# Sends deployment status to Slack channels:
+#   - #platform-deployments: Successful syncs
+#   - #platform-alerts: Failed syncs, degraded health
+#
+# Triggers:
+#   - on-sync-succeeded: App successfully synced
+#   - on-sync-failed: Sync failed (broken manifest, resource conflict)
+#   - on-health-degraded: App health changed to Degraded
+#   - on-deployed: New version deployed (image tag changed)
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-notifications-cm
+  namespace: argocd
+data:
+  # Slack service configuration
+  service.slack: |
+    token: $slack-token
+
+  # ─── TRIGGERS ──────────────────────────────────────────────
+
+  trigger.on-sync-succeeded: |
+    - description: Application synced successfully
+      when: app.status.operationState.phase in ['Succeeded']
+      send: [app-sync-succeeded]
+
+  trigger.on-sync-failed: |
+    - description: Application sync failed
+      when: app.status.operationState.phase in ['Error', 'Failed']
+      send: [app-sync-failed]
+
+  trigger.on-health-degraded: |
+    - description: Application health degraded
+      when: app.status.health.status == 'Degraded'
+      send: [app-health-degraded]
+
+  trigger.on-deployed: |
+    - description: New version deployed
+      when: app.status.operationState.phase in ['Succeeded'] and app.status.operationState.operation.initiatedBy.automated == true
+      send: [app-deployed]
+
+  # ─── TEMPLATES ─────────────────────────────────────────────
+
+  template.app-sync-succeeded: |
+    slack:
+      attachments: |
+        [{
+          "color": "#18be52",
+          "title": "✅ {{ .app.metadata.name }} synced successfully",
+          "fields": [
+            {"title": "Application", "value": "{{ .app.metadata.name }}", "short": true},
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Revision", "value": "{{ .app.status.sync.revision | trunc 7 }}", "short": true},
+            {"title": "Time", "value": "{{ .app.status.operationState.finishedAt }}", "short": true}
+          ],
+          "actions": [{
+            "type": "button",
+            "text": "View in ArgoCD",
+            "url": "{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}"
+          }]
+        }]
+
+  template.app-sync-failed: |
+    slack:
+      attachments: |
+        [{
+          "color": "#E96D76",
+          "title": "❌ {{ .app.metadata.name }} sync FAILED",
+          "fields": [
+            {"title": "Application", "value": "{{ .app.metadata.name }}", "short": true},
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Error", "value": "{{ .app.status.operationState.message | trunc 200 }}", "short": false}
+          ],
+          "actions": [
+            {"type": "button", "text": "View in ArgoCD", "url": "{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}"},
+            {"type": "button", "text": "View Diff", "url": "{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}?view=diff"}
+          ]
+        }]
+
+  template.app-health-degraded: |
+    slack:
+      attachments: |
+        [{
+          "color": "#f4c030",
+          "title": "⚠️ {{ .app.metadata.name }} health DEGRADED",
+          "fields": [
+            {"title": "Application", "value": "{{ .app.metadata.name }}", "short": true},
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Health Status", "value": "{{ .app.status.health.status }}", "short": true},
+            {"title": "Sync Status", "value": "{{ .app.status.sync.status }}", "short": true}
+          ],
+          "actions": [{
+            "type": "button",
+            "text": "Investigate",
+            "url": "{{ .context.argocdUrl }}/applications/{{ .app.metadata.name }}?view=tree&resource="
+          }]
+        }]
+
+  template.app-deployed: |
+    slack:
+      attachments: |
+        [{
+          "color": "#18be52",
+          "title": "🚀 {{ .app.metadata.name }} — new version deployed",
+          "fields": [
+            {"title": "Application", "value": "{{ .app.metadata.name }}", "short": true},
+            {"title": "Environment", "value": "{{ .app.metadata.labels.environment }}", "short": true},
+            {"title": "Revision", "value": "{{ .app.status.sync.revision | trunc 7 }}", "short": true},
+            {"title": "Triggered By", "value": "Automated (Image Updater)", "short": true}
+          ]
+        }]
+
+---
+# Secret for Slack token (reference only — use sealed-secrets or external-secrets in prod)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: argocd-notifications-secret
+  namespace: argocd
+type: Opaque
+stringData:
+  slack-token: "xoxb-REPLACE-WITH-REAL-TOKEN"

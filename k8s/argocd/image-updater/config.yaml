@@ -1,0 +1,98 @@
+# ArgoCD Image Updater Configuration
+#
+# Automatically updates container image tags when new versions are pushed.
+# Works with: Docker Hub, ECR, GCR, GitHub Container Registry
+#
+# Flow:
+#   1. CI builds new image → pushes to registry with tag (git SHA or semver)
+#   2. Image Updater polls registry for new tags
+#   3. Finds newer tag matching constraint → updates ArgoCD Application
+#   4. ArgoCD syncs → new version deployed
+#
+# This eliminates manual image tag updates in Git — true continuous delivery.
+---
+# Image Updater Installation (Helm values)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-image-updater-config
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-image-updater
+    app.kubernetes.io/part-of: argocd
+data:
+  # Registries configuration
+  registries.conf: |
+    registries:
+      - name: Docker Hub
+        api_url: https://registry-1.docker.io
+        prefix: docker.io
+        default: true
+        credentials: pullsecret:argocd/dockerhub-credentials
+
+      - name: ECR
+        api_url: https://<account-id>.dkr.ecr.us-east-1.amazonaws.com
+        prefix: <account-id>.dkr.ecr.us-east-1.amazonaws.com
+        credentials: ext:/scripts/ecr-login.sh
+
+  # Log level
+  log.level: info
+
+  # Update strategy: git (commit back to repo) or argocd (parameter override)
+  git.commit-message-template: |
+    build: update image {{ .AppName }} to {{ .NewImage }}:{{ .NewTag }}
+
+    Signed-off-by: ArgoCD Image Updater <noreply@argocd.local>
+
+---
+# Annotation-based configuration for PiggyMetrics apps
+# Add these annotations to ArgoCD Application resources to enable auto-update:
+#
+# metadata:
+#   annotations:
+#     argocd-image-updater.argoproj.io/image-list: gateway=sqshq/piggymetrics-gateway
+#     argocd-image-updater.argoproj.io/gateway.update-strategy: semver
+#     argocd-image-updater.argoproj.io/gateway.allow-tags: regexp:^v\d+\.\d+\.\d+$
+#     argocd-image-updater.argoproj.io/write-back-method: git
+#     argocd-image-updater.argoproj.io/write-back-target: kustomization
+#
+# Update strategies:
+#   - semver: Follow semantic versioning (v1.2.3 < v1.3.0)
+#   - latest: Always use latest tag (NOT recommended for prod)
+#   - name: Alphabetical sorting
+#   - digest: Track image digest changes for a fixed tag
+#
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: image-updater-annotations-reference
+  namespace: argocd
+data:
+  piggymetrics-dev.yaml: |
+    # Dev: auto-update to latest semver
+    annotations:
+      argocd-image-updater.argoproj.io/image-list: |
+        gateway=sqshq/piggymetrics-gateway,
+        account=sqshq/piggymetrics-account-service,
+        auth=sqshq/piggymetrics-auth-service,
+        statistics=sqshq/piggymetrics-statistics-service,
+        notification=sqshq/piggymetrics-notification-service
+      argocd-image-updater.argoproj.io/gateway.update-strategy: latest
+      argocd-image-updater.argoproj.io/account.update-strategy: latest
+      argocd-image-updater.argoproj.io/auth.update-strategy: latest
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-branch: main
+
+  piggymetrics-prod.yaml: |
+    # Prod: only semver tags, must be pre-released in dev
+    annotations:
+      argocd-image-updater.argoproj.io/image-list: |
+        gateway=sqshq/piggymetrics-gateway,
+        account=sqshq/piggymetrics-account-service,
+        auth=sqshq/piggymetrics-auth-service
+      argocd-image-updater.argoproj.io/gateway.update-strategy: semver
+      argocd-image-updater.argoproj.io/gateway.allow-tags: regexp:^v\d+\.\d+\.\d+$
+      argocd-image-updater.argoproj.io/account.update-strategy: semver
+      argocd-image-updater.argoproj.io/account.allow-tags: regexp:^v\d+\.\d+\.\d+$
+      argocd-image-updater.argoproj.io/write-back-method: git
+      argocd-image-updater.argoproj.io/git-branch: main

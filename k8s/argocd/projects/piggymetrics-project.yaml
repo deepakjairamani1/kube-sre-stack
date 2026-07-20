@@ -1,0 +1,82 @@
+# ArgoCD Project: PiggyMetrics
+#
+# Defines the boundary for PiggyMetrics applications:
+# - Which repos they can pull from
+# - Which namespaces they can deploy to
+# - Which cluster resources they can create
+# - Role bindings for team access
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: piggymetrics
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: PiggyMetrics microservices platform
+
+  # Only allow sources from our repo
+  sourceRepos:
+    - "https://github.com/deepakjairamani1/kube-sre-stack.git"
+
+  # Only deploy to piggymetrics namespaces
+  destinations:
+    - namespace: "piggymetrics-*"
+      server: https://kubernetes.default.svc
+    - namespace: piggymetrics
+      server: https://kubernetes.default.svc
+
+  # Allow these cluster-scoped resources
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: policy
+      kind: PodDisruptionBudget
+
+  # Allow all namespace-scoped resources
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+
+  # Deny dangerous resources
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+
+  # Sync windows — only allow prod deploys during business hours IST
+  syncWindows:
+    - kind: allow
+      schedule: "0 9-18 * * 1-5"   # Mon-Fri 9am-6pm IST
+      duration: 9h
+      namespaces:
+        - piggymetrics-prod
+      manualSync: true               # Manual sync always allowed
+    - kind: deny
+      schedule: "0 0-8,19-23 * * *"  # Outside business hours
+      duration: 14h
+      namespaces:
+        - piggymetrics-prod
+
+  # Roles for team access
+  roles:
+    - name: developer
+      description: "Can view and sync piggymetrics apps"
+      policies:
+        - p, proj:piggymetrics:developer, applications, get, piggymetrics/*, allow
+        - p, proj:piggymetrics:developer, applications, sync, piggymetrics/*, allow
+        - p, proj:piggymetrics:developer, logs, get, piggymetrics/*, allow
+      groups:
+        - piggymetrics-developers
+
+    - name: admin
+      description: "Full access to piggymetrics project"
+      policies:
+        - p, proj:piggymetrics:admin, applications, *, piggymetrics/*, allow
+        - p, proj:piggymetrics:admin, repositories, *, piggymetrics/*, allow
+      groups:
+        - platform-team

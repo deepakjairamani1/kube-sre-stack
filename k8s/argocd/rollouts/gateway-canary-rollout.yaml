@@ -1,0 +1,193 @@
+# Argo Rollouts — Progressive Delivery for Gateway Service
+#
+# Instead of a standard Deployment (all-at-once rollout), this uses
+# Argo Rollouts for canary deployment with automated analysis.
+#
+# Flow:
+#   1. New image pushed → ArgoCD syncs
+#   2. Rollout creates canary ReplicaSet (20% traffic)
+#   3. AnalysisRun checks error rate + latency for 5 minutes
+#   4. If healthy → promote to 50% → analyze → promote to 100%
+#   5. If unhealthy → automatic rollback
+#
+# This is how you do zero-downtime, zero-risk deployments at scale.
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: gateway-canary
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: api-gateway
+    app.kubernetes.io/part-of: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 3
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gateway
+        app.kubernetes.io/component: api-gateway
+        app.kubernetes.io/part-of: piggymetrics
+    spec:
+      serviceAccountName: piggymetrics-gateway
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gateway
+          image: sqshq/piggymetrics-gateway:latest
+          ports:
+            - containerPort: 4000
+              protocol: TCP
+          envFrom:
+            - secretRef:
+                name: piggymetrics-secrets
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 4000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 4000
+            initialDelaySeconds: 90
+            periodSeconds: 30
+  strategy:
+    canary:
+      # Traffic splitting steps
+      steps:
+        - setWeight: 20
+        - pause: { duration: 5m }         # Hold at 20% for 5 min
+        - analysis:
+            templates:
+              - templateName: canary-success-rate
+            args:
+              - name: service-name
+                value: gateway
+        - setWeight: 50
+        - pause: { duration: 5m }         # Hold at 50% for 5 min
+        - analysis:
+            templates:
+              - templateName: canary-success-rate
+            args:
+              - name: service-name
+                value: gateway
+        - setWeight: 80
+        - pause: { duration: 2m }         # Quick check at 80%
+        - setWeight: 100                  # Full promotion
+
+      # Canary service for traffic splitting
+      canaryService: gateway-canary
+      stableService: gateway-stable
+
+      # Nginx ingress traffic routing
+      trafficRouting:
+        nginx:
+          stableIngress: piggymetrics-ingress
+          annotationPrefix: nginx.ingress.kubernetes.io
+
+      # Auto rollback on failure
+      abortScaleDownDelaySeconds: 30
+      dynamicStableScale: true
+
+      # Anti-affinity between canary and stable
+      antiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          weight: 100
+
+---
+# Canary and Stable Services (for traffic splitting)
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-canary
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: canary
+spec:
+  selector:
+    app.kubernetes.io/name: gateway
+  ports:
+    - port: 4000
+      targetPort: 4000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-stable
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/component: stable
+spec:
+  selector:
+    app.kubernetes.io/name: gateway
+  ports:
+    - port: 4000
+      targetPort: 4000
+
+---
+# AnalysisTemplate — Checks canary health using Prometheus metrics
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: canary-success-rate
+  namespace: piggymetrics
+spec:
+  args:
+    - name: service-name
+  metrics:
+    # Check: Error rate must be < 5%
+    - name: error-rate
+      interval: 60s
+      count: 5
+      successCondition: result[0] < 0.05
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.observability.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}", code=~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[2m]))
+
+    # Check: P99 latency must be < 2s
+    - name: latency-p99
+      interval: 60s
+      count: 5
+      successCondition: result[0] < 2.0
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.observability.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket{service="{{args.service-name}}"}[2m])) by (le)
+            )
+
+    # Check: Traffic is actually flowing (not a silent failure)
+    - name: request-volume
+      interval: 60s
+      count: 3
+      successCondition: result[0] > 1
+      failureLimit: 2
+      provider:
+        prometheus:
+          address: http://prometheus.observability.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{service="{{args.service-name}}"}[2m]))

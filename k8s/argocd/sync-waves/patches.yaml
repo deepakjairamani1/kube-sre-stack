@@ -1,0 +1,165 @@
+# Sync Wave Patches for PiggyMetrics Resources
+# Apply via Kustomize strategic merge patches
+#
+# Usage: Add to overlays/*/kustomization.yaml:
+#   patches:
+#     - path: ../../sync-waves/patches.yaml
+---
+# Wave -1: Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+---
+# Wave 0: MongoDB
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mongodb
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+---
+# Wave 0: RabbitMQ
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+---
+# Wave 0: Config Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: config-service
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: config-service
+---
+# Wave 0: Registry
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+---
+# Wave 1: Auth Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+---
+# Wave 1: Account Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: account-service
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+---
+# Wave 2: Statistics Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: statistics-service
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: statistics-service
+---
+# Wave 2: Notification Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-service
+---
+# Wave 3: Gateway
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+---
+# Wave 4: Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: piggymetrics-ingress
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+---
+# Wave 5: HPAs
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gateway-hpa
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: auth-service-hpa
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: account-service-hpa
+  namespace: piggymetrics
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
