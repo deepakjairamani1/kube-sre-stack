@@ -1,0 +1,66 @@
+# CI Pipeline — Validates infrastructure code on every PR
+#
+# Jobs run in parallel where possible:
+#   lint → (terraform-validate, k8s-validate, security-scan)
+#
+# Triggers on:
+#   - Pull requests to main (validate before merge)
+#   - Push to main (post-merge validation)
+name: CI Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "terragrunt/**"
+      - "k8s/**"
+      - ".github/workflows/**"
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "terragrunt/**"
+      - "k8s/**"
+
+env:
+  TF_VERSION: "1.7.0"
+  TERRAGRUNT_VERSION: "0.55.0"
+  KUBECONFORM_VERSION: "0.6.4"
+
+jobs:
+  lint:
+    name: "🧹 Lint & Format Check"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        run: |
+          echo "## Terraform Format Check" >> $GITHUB_STEP_SUMMARY
+          if terraform fmt -check -recursive terraform/; then
+            echo "✅ All files formatted correctly" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Files need formatting. Run: terraform fmt -recursive terraform/" >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi
+
+      - name: YAML Lint
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: k8s/
+          config_data: |
+            extends: default
+            rules:
+              line-length:
+                max: 200
+              truthy:
+                check-keys: false
+              comments:
+                min-spaces-from-content: 1
