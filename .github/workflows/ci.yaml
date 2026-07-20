@@ -147,3 +147,64 @@ jobs:
               issue_number: context.issue.number,
               body: body
             });
+
+  k8s-validate:
+    name: "☸️ Kubernetes Manifest Validation"
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubeconform
+        run: |
+          wget -q https://github.com/yannh/kubeconform/releases/download/v${{ env.KUBECONFORM_VERSION }}/kubeconform-linux-amd64.tar.gz
+          tar xzf kubeconform-linux-amd64.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Install kustomize
+        uses: imranismail/setup-kustomize@v2
+
+      - name: Validate base manifests
+        run: |
+          echo "## K8s Manifest Validation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Validate raw YAML files
+          find k8s/ -name "*.yaml" -not -name "kustomization.yaml" -not -name "*values*" | \
+            xargs kubeconform \
+              -strict \
+              -ignore-missing-schemas \
+              -kubernetes-version 1.29.0 \
+              -summary
+          
+          echo "✅ All manifests valid against K8s 1.29 schema" >> $GITHUB_STEP_SUMMARY
+
+      - name: Validate Kustomize overlays build
+        run: |
+          echo "### Kustomize Build Test" >> $GITHUB_STEP_SUMMARY
+          
+          for overlay in k8s/apps/piggymetrics/overlays/*/; do
+            env=$(basename $overlay)
+            echo "Building overlay: $env"
+            kustomize build $overlay > /dev/null 2>&1
+            if [ $? -eq 0 ]; then
+              echo "✅ Overlay **$env** builds successfully" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ Overlay **$env** failed to build" >> $GITHUB_STEP_SUMMARY
+              kustomize build $overlay
+              exit 1
+            fi
+          done
+
+      - name: Validate Kustomize output with kubeconform
+        run: |
+          for overlay in k8s/apps/piggymetrics/overlays/*/; do
+            env=$(basename $overlay)
+            echo "Validating rendered output: $env"
+            kustomize build $overlay | kubeconform \
+              -strict \
+              -ignore-missing-schemas \
+              -kubernetes-version 1.29.0 \
+              -summary
+          done
