@@ -1,0 +1,50 @@
+# Grafana Dashboard Provisioning
+#
+# Grafana's sidecar container watches for ConfigMaps with the label
+# grafana_dashboard: "1" and auto-loads them as dashboards.
+#
+# This means dashboards are:
+#   ✅ Version-controlled in Git
+#   ✅ Auto-deployed via ArgoCD
+#   ✅ Consistent across environments
+#   ✅ Recoverable after Grafana pod restart
+#
+# No manual dashboard creation in the UI — everything is code.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-piggymetrics-overview
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: piggymetrics
+data:
+  piggymetrics-overview.json: |
+    # Content loaded from grafana-dashboards/piggymetrics-overview.json
+    # In practice, use: kubectl create configmap ... --from-file=
+    # Or reference via Kustomize configMapGenerator
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-piggymetrics-infra
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: piggymetrics
+data:
+  piggymetrics-infra.json: |
+    # Content loaded from grafana-dashboards/piggymetrics-infra.json
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-slo
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: piggymetrics
+data:
+  slo-dashboard.json: |
+    # Content loaded from grafana-dashboards/slo-dashboard.json
