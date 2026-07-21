@@ -1,0 +1,73 @@
+# PodMonitors for Infrastructure Components
+#
+# PodMonitors are used when services don't have a Kubernetes Service
+# fronting them (like StatefulSet pods with headless services) or
+# when we want to scrape sidecar exporters.
+#
+# MongoDB: uses mongodb-exporter sidecar
+# RabbitMQ: built-in Prometheus metrics plugin
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: mongodb
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: mongodb
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mongodb
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        # Add pod name as instance label for per-replica visibility
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: mongodb_instance
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: rabbitmq
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: rabbitmq
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  podMetricsEndpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+# ServiceMonitor for Nginx Ingress Controller metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ingress-nginx
+  namespace: observability
+  labels:
+    app.kubernetes.io/name: ingress-nginx
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames:
+      - ingress-nginx
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ingress-nginx
+      app.kubernetes.io/component: controller
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
