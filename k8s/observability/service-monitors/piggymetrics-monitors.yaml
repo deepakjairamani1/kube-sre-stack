@@ -1,0 +1,107 @@
+# ServiceMonitors for PiggyMetrics Microservices
+#
+# These tell Prometheus HOW to scrape metrics from each service.
+# Spring Boot Actuator exposes /actuator/prometheus by default.
+#
+# Without ServiceMonitors, Prometheus has no idea your services exist.
+# With them, metrics auto-appear within 30s of service deployment.
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: gateway
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+      metricRelabelings:
+        # Drop high-cardinality metrics to control storage
+        - sourceLabels: [__name__]
+          regex: "jvm_buffer_.*"
+          action: drop
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: auth-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: auth-service
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: auth-service
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: account-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: account-service
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 15s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: statistics-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: statistics-service
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: statistics-service
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: notification-service
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: notification-service
+    app.kubernetes.io/part-of: piggymetrics
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: notification-service
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: 30s
+      scrapeTimeout: 10s
