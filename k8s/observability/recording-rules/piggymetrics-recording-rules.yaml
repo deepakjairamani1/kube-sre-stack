@@ -1,0 +1,161 @@
+# Prometheus Recording Rules
+#
+# Pre-compute expensive queries so dashboards and alerts are instant.
+# Without recording rules, every dashboard panel re-calculates from raw data.
+# With them, Prometheus stores the result as a new time series.
+#
+# Naming convention: level:metric:operations
+# Example: service:http_requests:rate5m
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: piggymetrics-recording-rules
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    # =========================================================================
+    # REQUEST RATE (pre-computed per service)
+    # =========================================================================
+    - name: piggymetrics.request_rate
+      interval: 30s
+      rules:
+        - record: service:http_requests:rate5m
+          expr: |
+            sum by (service, namespace) (
+              rate(http_requests_total{namespace="piggymetrics"}[5m])
+            )
+
+        - record: service:http_requests_errors:rate5m
+          expr: |
+            sum by (service, namespace) (
+              rate(http_requests_total{namespace="piggymetrics", code=~"5.."}[5m])
+            )
+
+        - record: service:http_error_ratio:rate5m
+          expr: |
+            service:http_requests_errors:rate5m
+            /
+            service:http_requests:rate5m
+
+    # =========================================================================
+    # LATENCY QUANTILES (pre-computed — avoids expensive histogram_quantile)
+    # =========================================================================
+    - name: piggymetrics.latency
+      interval: 30s
+      rules:
+        - record: service:http_request_duration:p50_5m
+          expr: |
+            histogram_quantile(0.50,
+              sum by (le, service, namespace) (
+                rate(http_request_duration_seconds_bucket{namespace="piggymetrics"}[5m])
+              )
+            )
+
+        - record: service:http_request_duration:p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum by (le, service, namespace) (
+                rate(http_request_duration_seconds_bucket{namespace="piggymetrics"}[5m])
+              )
+            )
+
+        - record: service:http_request_duration:p99_5m
+          expr: |
+            histogram_quantile(0.99,
+              sum by (le, service, namespace) (
+                rate(http_request_duration_seconds_bucket{namespace="piggymetrics"}[5m])
+              )
+            )
+
+    # =========================================================================
+    # RESOURCE UTILIZATION (ratio of usage to limit)
+    # =========================================================================
+    - name: piggymetrics.resources
+      interval: 60s
+      rules:
+        - record: pod:cpu_utilization:ratio
+          expr: |
+            sum by (pod, namespace) (
+              rate(container_cpu_usage_seconds_total{namespace="piggymetrics", container!=""}[5m])
+            )
+            /
+            sum by (pod, namespace) (
+              container_spec_cpu_quota{namespace="piggymetrics", container!=""}
+              / container_spec_cpu_period{namespace="piggymetrics", container!=""}
+            )
+
+        - record: pod:memory_utilization:ratio
+          expr: |
+            sum by (pod, namespace) (
+              container_memory_working_set_bytes{namespace="piggymetrics", container!=""}
+            )
+            /
+            sum by (pod, namespace) (
+              container_spec_memory_limit_bytes{namespace="piggymetrics", container!=""}
+            )
+
+    # =========================================================================
+    # AVAILABILITY SLI (pre-computed for SLO dashboards)
+    # =========================================================================
+    - name: piggymetrics.sli
+      interval: 30s
+      rules:
+        # Current availability (1 - error rate) over various windows
+        - record: sli:availability:ratio_5m
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{namespace="piggymetrics", code=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{namespace="piggymetrics"}[5m]))
+            )
+
+        - record: sli:availability:ratio_1h
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{namespace="piggymetrics", code=~"5.."}[1h]))
+              /
+              sum(rate(http_requests_total{namespace="piggymetrics"}[1h]))
+            )
+
+        - record: sli:availability:ratio_1d
+          expr: |
+            1 - (
+              sum(rate(http_requests_total{namespace="piggymetrics", code=~"5.."}[1d]))
+              /
+              sum(rate(http_requests_total{namespace="piggymetrics"}[1d]))
+            )
+
+        # Latency SLI: % of requests under 500ms
+        - record: sli:latency_good:ratio_5m
+          expr: |
+            sum(rate(http_request_duration_seconds_bucket{namespace="piggymetrics", le="0.5"}[5m]))
+            /
+            sum(rate(http_request_duration_seconds_count{namespace="piggymetrics"}[5m]))
+
+    # =========================================================================
+    # INFRASTRUCTURE HEALTH
+    # =========================================================================
+    - name: piggymetrics.infra
+      interval: 60s
+      rules:
+        - record: mongodb:connections:current
+          expr: |
+            sum(mongodb_connections_current{namespace="piggymetrics"})
+
+        - record: mongodb:operations:rate5m
+          expr: |
+            sum by (type) (
+              rate(mongodb_op_counters_total{namespace="piggymetrics"}[5m])
+            )
+
+        - record: rabbitmq:messages:ready
+          expr: |
+            sum(rabbitmq_queue_messages_ready{namespace="piggymetrics"})
+
+        - record: rabbitmq:messages:publish_rate
+          expr: |
+            sum(rate(rabbitmq_queue_messages_published_total{namespace="piggymetrics"}[5m]))
