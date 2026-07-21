@@ -1,0 +1,127 @@
+{
+  "description": "MongoDB + RabbitMQ infrastructure health dashboard",
+  "editable": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "🍃 MongoDB",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Active Connections",
+      "type": "timeseries",
+      "targets": [{ "expr": "mongodb_connections_current{namespace=\"piggymetrics\"}", "legendFormat": "{{mongodb_instance}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ops" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 1 },
+      "id": 3,
+      "title": "Operations/sec",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(mongodb_op_counters_total{namespace=\"piggymetrics\"}[5m])", "legendFormat": "{{type}} - {{mongodb_instance}}" }
+      ]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 1 },
+      "id": 4,
+      "title": "Storage Size",
+      "type": "timeseries",
+      "targets": [{ "expr": "mongodb_dbstats_dataSize{namespace=\"piggymetrics\"}", "legendFormat": "{{database}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "ms" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 7 },
+      "id": 5,
+      "title": "Query Latency (avg)",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(mongodb_mongod_op_latencies_latency_total{namespace=\"piggymetrics\"}[5m]) / rate(mongodb_mongod_op_latencies_ops_total{namespace=\"piggymetrics\"}[5m])", "legendFormat": "{{type}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 7 },
+      "id": 6,
+      "title": "Replication Lag (seconds)",
+      "type": "stat",
+      "targets": [{ "expr": "mongodb_mongod_replset_member_replication_lag{namespace=\"piggymetrics\"}", "legendFormat": "{{name}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "percentunit", "max": 1, "thresholds": { "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0.85}] } } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 7 },
+      "id": 7,
+      "title": "Cache Hit Ratio",
+      "type": "gauge",
+      "targets": [{ "expr": "mongodb_mongod_wiredtiger_cache_bytes_read_into{namespace=\"piggymetrics\"} / (mongodb_mongod_wiredtiger_cache_bytes_read_into{namespace=\"piggymetrics\"} + mongodb_mongod_wiredtiger_cache_bytes_written_from{namespace=\"piggymetrics\"})", "legendFormat": "WiredTiger Cache" }]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 13 },
+      "id": 8,
+      "title": "🐰 RabbitMQ",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 14 },
+      "id": 9,
+      "title": "Queue Depth (messages ready)",
+      "type": "timeseries",
+      "targets": [{ "expr": "rabbitmq_queue_messages_ready{namespace=\"piggymetrics\"}", "legendFormat": "{{queue}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 14 },
+      "id": 10,
+      "title": "Message Publish Rate",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(rabbitmq_queue_messages_published_total{namespace=\"piggymetrics\"}[5m])", "legendFormat": "{{queue}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 14 },
+      "id": 11,
+      "title": "Consumer Count",
+      "type": "stat",
+      "targets": [{ "expr": "rabbitmq_queue_consumers{namespace=\"piggymetrics\"}", "legendFormat": "{{queue}}" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "id": 12,
+      "title": "Connections",
+      "type": "timeseries",
+      "targets": [{ "expr": "rabbitmq_connections{namespace=\"piggymetrics\"}", "legendFormat": "connections" }]
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "id": 13,
+      "title": "Memory Usage",
+      "type": "timeseries",
+      "targets": [{ "expr": "rabbitmq_process_resident_memory_bytes{namespace=\"piggymetrics\"}", "legendFormat": "resident memory" }]
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["piggymetrics", "mongodb", "rabbitmq", "infrastructure"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "PiggyMetrics — Infrastructure (MongoDB + RabbitMQ)",
+  "uid": "piggymetrics-infra-health"
+}
