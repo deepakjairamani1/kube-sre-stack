@@ -1,0 +1,64 @@
+# CronJob: Auto-scale on high latency
+# Runs every 2 minutes, scales up services when P99 > threshold
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: auto-scale-on-latency
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: auto-remediation
+    app.kubernetes.io/component: latency-scaler
+    app.kubernetes.io/part-of: kube-sre-stack
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 90
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: auto-remediation
+        spec:
+          serviceAccountName: auto-remediation
+          restartPolicy: OnFailure
+          containers:
+            - name: scaler
+              image: bitnami/kubectl:1.29
+              command: ["/bin/bash", "/scripts/auto-scale-on-latency.sh"]
+              env:
+                - name: NAMESPACE
+                  value: "piggymetrics"
+                - name: PROMETHEUS_URL
+                  value: "http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090"
+                - name: LATENCY_THRESHOLD_MS
+                  value: "2000"
+                - name: MAX_REPLICAS
+                  value: "10"
+                - name: DRY_RUN
+                  value: "false"
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: auto-remediation-config
+                      key: slack-webhook-url
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: auto-remediation-scripts
+                defaultMode: 0755
