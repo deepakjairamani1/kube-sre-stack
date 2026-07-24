@@ -1,0 +1,58 @@
+# CronJob: Auto-restart CrashLooping pods
+# Runs every 5 minutes, detects and remediates CrashLoopBackOff pods
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: auto-restart-crashloop
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: auto-remediation
+    app.kubernetes.io/component: crashloop-handler
+    app.kubernetes.io/part-of: kube-sre-stack
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 120
+      backoffLimit: 1
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: auto-remediation
+        spec:
+          serviceAccountName: auto-remediation
+          restartPolicy: OnFailure
+          containers:
+            - name: remediation
+              image: bitnami/kubectl:1.29
+              command: ["/bin/bash", "/scripts/auto-restart-crashloop.sh"]
+              env:
+                - name: NAMESPACE
+                  value: "piggymetrics"
+                - name: DRY_RUN
+                  value: "false"
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: auto-remediation-config
+                      key: slack-webhook-url
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: auto-remediation-scripts
+                defaultMode: 0755
