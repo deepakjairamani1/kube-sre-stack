@@ -1,0 +1,4 @@
+# Load test results (generated, not committed)
+results/
+*.json
+!package.json
