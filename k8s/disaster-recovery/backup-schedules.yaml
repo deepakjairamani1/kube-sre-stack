@@ -1,0 +1,115 @@
+# Velero Backup Schedules
+#
+# Three-tier backup strategy:
+#   Hourly: Critical resources only (fast, low storage)
+#   Daily: Full namespace backup with PV snapshots
+#   Weekly: Full cluster backup (all namespaces)
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: piggymetrics-hourly
+  namespace: velero
+  labels:
+    app.kubernetes.io/part-of: kube-sre-stack
+    backup-tier: hourly
+spec:
+  schedule: "0 * * * *"
+  template:
+    ttl: 72h0m0s  # Keep for 3 days
+    includedNamespaces:
+      - piggymetrics
+    includedResources:
+      - deployments
+      - statefulsets
+      - services
+      - configmaps
+      - secrets
+      - horizontalpodautoscalers
+      - poddisruptionbudgets
+    excludedResources:
+      - events
+      - pods
+    storageLocation: aws
+    snapshotVolumes: false  # No PV snapshots for hourly (too expensive)
+    metadata:
+      labels:
+        backup-type: hourly
+        namespace: piggymetrics
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: piggymetrics-daily
+  namespace: velero
+  labels:
+    app.kubernetes.io/part-of: kube-sre-stack
+    backup-tier: daily
+spec:
+  schedule: "0 2 * * *"  # 2 AM UTC
+  template:
+    ttl: 720h0m0s  # Keep for 30 days
+    includedNamespaces:
+      - piggymetrics
+    storageLocation: aws
+    volumeSnapshotLocations:
+      - aws
+    snapshotVolumes: true  # Full PV snapshots (MongoDB data)
+    hooks:
+      resources:
+        # Pre-backup hook: flush MongoDB to ensure consistent snapshot
+        - name: mongodb-pre-backup
+          includedNamespaces:
+            - piggymetrics
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: mongodb
+          pre:
+            - exec:
+                container: mongodb
+                command:
+                  - /bin/sh
+                  - -c
+                  - "mongosh --eval 'db.fsyncLock()'"
+                onError: Fail
+                timeout: 30s
+          post:
+            - exec:
+                container: mongodb
+                command:
+                  - /bin/sh
+                  - -c
+                  - "mongosh --eval 'db.fsyncUnlock()'"
+                onError: Continue
+                timeout: 30s
+    metadata:
+      labels:
+        backup-type: daily
+        namespace: piggymetrics
+---
+apiVersion: velero.io/v1
+kind: Schedule
+metadata:
+  name: cluster-weekly
+  namespace: velero
+  labels:
+    app.kubernetes.io/part-of: kube-sre-stack
+    backup-tier: weekly
+spec:
+  schedule: "0 3 * * 0"  # Sunday 3 AM UTC
+  template:
+    ttl: 2160h0m0s  # Keep for 90 days
+    includedNamespaces:
+      - piggymetrics
+      - observability
+      - argocd
+      - ingress-nginx
+      - external-secrets
+    storageLocation: aws
+    volumeSnapshotLocations:
+      - aws
+    snapshotVolumes: true
+    metadata:
+      labels:
+        backup-type: weekly
+        full-cluster: "true"
