@@ -1,0 +1,66 @@
+# Alerting Rules for Disaster Recovery
+# Monitors Velero backup health and DR readiness
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: disaster-recovery-alerts
+  namespace: observability
+  labels:
+    release: kube-prometheus-stack
+    app: kube-prometheus-stack
+spec:
+  groups:
+    - name: velero.backups
+      rules:
+        - alert: VeleroBackupFailed
+          expr: |
+            velero_backup_last_status{schedule!=""} == 0
+          for: 5m
+          labels:
+            severity: critical
+            category: disaster-recovery
+          annotations:
+            summary: "Velero backup failed: {{ $labels.schedule }}"
+            description: "Scheduled backup '{{ $labels.schedule }}' did not complete successfully. DR capability may be degraded."
+            impact: "RPO target at risk — data since last successful backup is unprotected"
+            action: "Check velero logs: kubectl logs -n velero -l app.kubernetes.io/name=velero --tail=100"
+            runbook_url: "https://github.com/deepakjairamani1/kube-sre-stack/blob/main/docs/disaster-recovery.md"
+
+        - alert: VeleroBackupStale
+          expr: |
+            time() - velero_backup_last_successful_timestamp{schedule!=""} > 90000
+          for: 10m
+          labels:
+            severity: critical
+            category: disaster-recovery
+          annotations:
+            summary: "No successful Velero backup in 25+ hours: {{ $labels.schedule }}"
+            description: "Schedule '{{ $labels.schedule }}' has not produced a successful backup in over 25 hours. RPO target is breached."
+            impact: "RPO BREACH — potential data loss window exceeds 1 hour target"
+            action: "1. Check velero backup get\n2. Check S3 bucket accessibility\n3. Verify IRSA role permissions"
+
+        - alert: VeleroBackupPartialFailure
+          expr: |
+            velero_backup_items_errors{schedule!=""} > 0
+          for: 5m
+          labels:
+            severity: warning
+            category: disaster-recovery
+          annotations:
+            summary: "Velero backup has partial failures: {{ $labels.schedule }}"
+            description: "Backup completed but {{ $value }} items had errors. Some resources may not be restorable."
+            action: "velero backup describe <backup-name> --details | grep -A5 'Errors'"
+
+        - alert: VeleroStorageLocationUnavailable
+          expr: |
+            velero_backup_storage_location_available == 0
+          for: 5m
+          labels:
+            severity: critical
+            category: disaster-recovery
+          annotations:
+            summary: "Velero backup storage location is unavailable"
+            description: "Cannot access S3 backup bucket. All backups and restores will fail."
+            impact: "COMPLETE DR CAPABILITY LOSS — no backups, no restores possible"
+            action: "Check S3 bucket existence, IAM permissions, and network connectivity"
