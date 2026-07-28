@@ -1,0 +1,55 @@
+# DR Validation CronJob
+# Runs weekly to prove backups are working and RTO/RPO targets are met
+# "Untested backups are just hopes, not plans"
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: dr-validation
+  namespace: velero
+  labels:
+    app.kubernetes.io/name: dr-validation
+    app.kubernetes.io/part-of: kube-sre-stack
+spec:
+  schedule: "0 6 * * 1"  # Monday 6 AM UTC (11:30 AM IST)
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 4
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 300
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: dr-validation
+          restartPolicy: OnFailure
+          containers:
+            - name: validator
+              image: bitnami/kubectl:1.29
+              command: ["/bin/bash", "/scripts/dr-validation.sh"]
+              env:
+                - name: NAMESPACE
+                  value: "velero"
+                - name: MAX_BACKUP_AGE_HOURS
+                  value: "25"
+                - name: SLACK_WEBHOOK_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: dr-config
+                      key: slack-webhook-url
+                      optional: true
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            - name: scripts
+              configMap:
+                name: dr-validation-scripts
+                defaultMode: 0755
