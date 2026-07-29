@@ -201,17 +201,35 @@ kube-sre-stack/
 
 ## 🛠️ Tech Stack
 
-- **Cloud**: AWS (EKS, VPC, IAM, EC2, S3, DynamoDB)
-- **IaC**: Terraform ~> 1.5 with remote state (S3 + DynamoDB locking)
-- **Container Orchestration**: Kubernetes 1.29 on EKS
-- **GitOps**: ArgoCD 2.x
-- **Autoscaling**: Karpenter v0.35+ (replaces Cluster Autoscaler)
-- **Observability**: Prometheus, Grafana, AlertManager, Loki
-- **SLO Management**: Custom dashboards + Pyrra
-- **Cost Management**: Kubecost
-- **Networking**: AWS VPC CNI, Calico Network Policies
-- **Secrets**: External Secrets Operator + AWS Secrets Manager
-- **Ingress**: AWS Load Balancer Controller
+| Layer | Technology | Purpose |
+|-------|-----------|---------|
+| **Cloud** | AWS (EKS, VPC, IAM, S3, Secrets Manager, KMS) | Infrastructure platform |
+| **IaC** | Terraform + Terragrunt | Multi-env infra with dependency management |
+| **Orchestration** | Kubernetes 1.29 (EKS) | Container orchestration |
+| **GitOps** | ArgoCD + Argo Rollouts | Declarative delivery + canary deploys |
+| **Autoscaling** | Karpenter v0.35+ | Cost-optimized node provisioning (Spot) |
+| **Observability** | Prometheus, Grafana, AlertManager | Metrics, dashboards, alerting |
+| **Alerting** | MWMBR SLO burn-rate | Google SRE Workbook pattern |
+| **Secrets** | External Secrets Operator + AWS SM | Zero static credentials (IRSA) |
+| **Backup/DR** | Velero + S3 cross-region | RTO < 30 min, RPO < 1 hour |
+| **Load Testing** | k6 | SLO validation (ramp, spike, soak) |
+| **Security** | Network Policies, PDBs, IRSA | Zero-trust, least-privilege |
+| **CI** | GitHub Actions | Validate, scan (Checkov/Trivy), cost estimate |
+| **Application** | PiggyMetrics (Spring Boot) | 10 microservices reference deployment |
+
+## 🧠 Key Design Decisions
+
+| Decision | Choice | Why |
+|----------|--------|-----|
+| EKS over ECS | EKS | Portability, ecosystem (Karpenter, ArgoCD), operator pattern support |
+| Karpenter over Cluster Autoscaler | Karpenter | 2x faster scaling, Spot diversification, consolidation |
+| Terragrunt over Terraform workspaces | Terragrunt | Explicit dependency graph, DRY configs, run-all |
+| MWMBR over static thresholds | Burn rate | 70% fewer false alerts, direct SLO budget connection |
+| External Secrets over SealedSecrets | ESO | No secrets in Git (even encrypted), auto-rotation |
+| ArgoCD over FluxCD | ArgoCD | UI, ApplicationSets, Rollouts integration, RBAC |
+| k6 over JMeter/Locust | k6 | Developer-friendly JS, CI-native, threshold-based pass/fail |
+
+See [`docs/adr/`](docs/adr/) for detailed Architecture Decision Records.
 
 ## 💡 Why I Built This
 
