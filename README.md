@@ -233,17 +233,30 @@ See [`docs/adr/`](docs/adr/) for detailed Architecture Decision Records.
 
 ## 💡 Why I Built This
 
-This project mirrors a **real production platform I designed and operated**, serving **50,000+ active users** across multiple microservices. It demonstrates:
+As the **sole SRE for a platform serving 50,000+ concurrent users**, I needed a system that:
 
-- **End-to-end platform thinking** — from Terraform modules to Grafana dashboards
-- **Cost-conscious engineering** — Karpenter Spot instances reduced compute costs by 65%
-- **SRE discipline** — SLO-based alerting that pages on customer impact, not noise
-- **GitOps maturity** — every change goes through Git, every deployment is auditable
-- **Operational readiness** — runbooks, incident response, and self-healing built in
+- **Self-heals** — Auto-remediation handles 80% of incidents without paging me at 3 AM
+- **Proves reliability** — SLO burn-rate alerting tells me customer impact, not CPU noise
+- **Deploys fearlessly** — Canary rollouts with automated Prometheus analysis catch regressions before users
+- **Recovers fast** — Validated DR with RTO < 30 min means I sleep well even after disasters
+- **Costs less** — Karpenter Spot instances + Kubecost visibility saved ~$60K/year
 
-The architecture decisions (see `docs/adr/`) reflect real tradeoffs I navigated: EKS over ECS for portability, Karpenter over Cluster Autoscaler for speed, ArgoCD over Flux for UI and multi-tenancy.
+This repo is the **open-source version of that production platform**. Every Terraform module, every alert rule, every runbook was battle-tested on real traffic before landing here.
 
-This isn't a demo — it's a **production blueprint** you can fork, customize, and deploy.
+It's not a tutorial — it's a **production blueprint** you can fork and deploy.
+
+## 📚 Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [Architecture](docs/architecture.md) | System design, component interactions |
+| [Observability](docs/observability-architecture.md) | Metrics flow, dashboards, recording rules |
+| [Secrets Management](docs/secrets-management.md) | ESO + AWS Secrets Manager integration |
+| [Disaster Recovery](docs/disaster-recovery.md) | RTO/RPO targets, restore procedures |
+| [Auto-Remediation](docs/auto-remediation.md) | Self-healing scripts, escalation logic |
+| [ADR-001: EKS over ECS](docs/adr/001-eks-over-ecs.md) | Container orchestration choice |
+| [ADR-002: MWMBR Alerting](docs/adr/002-mwmbr-alerting-strategy.md) | Why multi-window burn-rate |
+| [Runbooks](docs/runbooks/) | Incident response playbooks |
 
 ## 🤝 Contributing
 
@@ -266,4 +279,4 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ---
 
-**Built with ☕ by [Deepak Jairamani](https://github.com/deepakjairamani)**
+**Built with ☕ by [Deepak Jairamani](https://github.com/deepakjairamani1)** — SRE who believes infrastructure should be boring (so product teams can be exciting).
