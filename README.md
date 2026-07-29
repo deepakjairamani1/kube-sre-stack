@@ -3,11 +3,14 @@
 > **Production-ready Kubernetes platform with built-in SRE practices**
 
 [![Terraform](https://img.shields.io/badge/Terraform-%3E%3D1.5-623CE4?logo=terraform)](https://www.terraform.io/)
+[![Terragrunt](https://img.shields.io/badge/Terragrunt-Multi--Env-blue?logo=terraform)](https://terragrunt.gruntwork.io/)
 [![AWS](https://img.shields.io/badge/AWS-EKS-FF9900?logo=amazonaws)](https://aws.amazon.com/eks/)
 [![Kubernetes](https://img.shields.io/badge/Kubernetes-1.29-326CE5?logo=kubernetes)](https://kubernetes.io/)
 [![ArgoCD](https://img.shields.io/badge/ArgoCD-GitOps-EF7B4D?logo=argo)](https://argoproj.github.io/cd/)
 [![Prometheus](https://img.shields.io/badge/Prometheus-Monitoring-E6522C?logo=prometheus)](https://prometheus.io/)
 [![Grafana](https://img.shields.io/badge/Grafana-Dashboards-F46800?logo=grafana)](https://grafana.com/)
+[![Velero](https://img.shields.io/badge/Velero-DR_Backups-1a5276)](https://velero.io/)
+[![k6](https://img.shields.io/badge/k6-Load_Testing-7d64ff?logo=k6)](https://k6.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -54,14 +57,19 @@
 
 | Category | Component | Description |
 |----------|-----------|-------------|
-| **Infrastructure** | EKS + Karpenter | Auto-scaling Kubernetes with intelligent node provisioning |
-| **GitOps** | ArgoCD | Declarative, Git-driven continuous delivery |
-| **Observability** | Prometheus + Grafana | Full-stack metrics, alerting, and visualization |
-| **SLO Management** | Custom Dashboards | Track error budgets, availability, and latency SLOs |
-| **Cost Optimization** | Kubecost + Spot | Real-time cost visibility with aggressive Spot usage |
-| **Incident Response** | AlertManager + Runbooks | Automated escalation with self-healing capabilities |
-| **Security** | IAM Roles for SA | Pod-level least-privilege access via IRSA |
-| **Networking** | Multi-AZ VPC | Production-grade network isolation and redundancy |
+| **Infrastructure** | EKS + Karpenter | Auto-scaling Kubernetes with cost-optimized Spot node provisioning |
+| **IaC** | Terragrunt + Terraform | Multi-environment (dev/prod) with dependency graph and remote state |
+| **GitOps** | ArgoCD + ApplicationSets | Declarative delivery with canary rollouts (Argo Rollouts) |
+| **Observability** | Prometheus + Grafana | ServiceMonitors, recording rules, Golden Signal dashboards |
+| **Alerting** | AlertManager + SLO Burn Rate | Multi-window multi-burn-rate alerting (Google SRE Workbook pattern) |
+| **Secrets** | External Secrets Operator | AWS Secrets Manager integration via IRSA (zero static credentials) |
+| **Disaster Recovery** | Velero + S3 Cross-Region | Three-tier backups (hourly/daily/weekly), RTO < 30m, RPO < 1h |
+| **Auto-Remediation** | CronJobs + Prometheus | Self-healing: restart crashloops, scale on latency, disk cleanup |
+| **Load Testing** | k6 | SLO validation under load: ramp, spike, and 30-min soak tests |
+| **Security** | Network Policies + IRSA | Zero-trust networking, pod-level least-privilege, PDBs |
+| **Cost Optimization** | Kubecost + Karpenter Spot | Real-time cost visibility, Spot diversification, rightsizing |
+| **CI/CD** | GitHub Actions | Terraform validate, kubeconform, Checkov, Trivy, Infracost |
+| **Microservices** | PiggyMetrics (10 services) | Full Spring Boot microservices deployed with Kustomize overlays |
 
 ## 🏁 Quick Start
 
