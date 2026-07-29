@@ -76,54 +76,67 @@
 ### Prerequisites
 
 - AWS CLI configured with appropriate credentials
-- Terraform >= 1.5
-- kubectl
-- Helm 3.x
+- Terraform >= 1.5, Terragrunt >= 0.55
+- kubectl, Helm 3.x
+- k6 (for load testing)
 
-### Deploy Infrastructure
+### Deploy Infrastructure (Terragrunt)
 
 ```bash
 # Clone the repository
 git clone https://github.com/deepakjairamani1/kube-sre-stack.git
 cd kube-sre-stack
 
-# Initialize and deploy dev environment
-cd terraform/environments/dev
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars with your values
-
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
+# Deploy dev environment (VPC → EKS → Observability → Ingress)
+cd terragrunt/env/dev
+terragrunt run-all plan     # Review changes
+terragrunt run-all apply    # Deploy (respects dependency order)
 
 # Configure kubectl
-aws eks update-kubeconfig --name kube-sre-dev --region us-west-2
+aws eks update-kubeconfig --name kube-sre-stack-dev --region us-east-1
 ```
 
-### Deploy Platform Components
+### Deploy Platform via ArgoCD
 
 ```bash
 # Install ArgoCD
 kubectl apply -f k8s/argocd/install.yaml
 
-# ArgoCD will reconcile the remaining components from Git
-kubectl apply -f k8s/argocd/application.yaml
+# Deploy all applications (ArgoCD auto-discovers from Git)
+kubectl apply -f k8s/argocd/projects/
+kubectl apply -f k8s/argocd/applicationsets/
 
-# Verify
+# ArgoCD reconciles everything: observability, alerting, PiggyMetrics, secrets, DR
 kubectl get applications -n argocd
+```
+
+### Deploy PiggyMetrics (Dev)
+
+```bash
+# Using Kustomize overlay directly (or let ArgoCD handle it)
+kubectl apply -k k8s/apps/piggymetrics/overlays/dev/
+```
+
+### Run Load Tests
+
+```bash
+cd tests/load
+make gateway          # 8 min, ramp to 150 VUs
+make auth             # 4 min, spike test
+make soak             # 30 min, stability test
 ```
 
 ### Access Dashboards
 
 ```bash
 # Grafana (default: admin/prom-operator)
-kubectl port-forward svc/grafana -n observability 3000:80
+kubectl port-forward svc/kube-prometheus-stack-grafana -n observability 3000:80
 
 # ArgoCD
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 
 # Prometheus
-kubectl port-forward svc/prometheus-server -n observability 9090:80
+kubectl port-forward svc/prometheus-kube-prometheus-prometheus -n observability 9090:9090
 ```
 
 ## 📁 Directory Structure
