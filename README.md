@@ -131,23 +131,59 @@ kubectl port-forward svc/prometheus-server -n observability 9090:80
 ```
 kube-sre-stack/
 ├── terraform/
-│   ├── environments/
-│   │   ├── dev/              # Dev environment (smaller instances, single NAT)
-│   │   └── prod/             # Prod environment (HA, multi-NAT, larger nodes)
 │   └── modules/
-│       ├── vpc/              # Multi-AZ VPC with public/private/db subnets
-│       ├── eks/              # EKS cluster, managed node groups, IRSA
-│       └── observability/    # Helm-based observability stack deployment
+│       ├── vpc/                    # Multi-AZ VPC (public/private/db subnets)
+│       ├── eks/                    # EKS cluster, Karpenter IAM, IRSA, OIDC
+│       ├── observability/          # Prometheus + Grafana via Helm
+│       ├── ingress/                # Nginx Ingress controller (AWS NLB)
+│       ├── external-secrets/       # External Secrets Operator + IRSA
+│       └── velero/                 # Backup infrastructure (S3 + IAM)
+├── terragrunt/
+│   ├── terragrunt.hcl             # Root config (remote state, provider)
+│   └── env/
+│       ├── dev/                    # Dev: 2 AZ, single NAT, t3.medium
+│       └── prod/                   # Prod: 3 AZ, HA NAT, t3.large
 ├── k8s/
-│   ├── argocd/               # ArgoCD installation and app definitions
-│   ├── observability/        # Prometheus values, Grafana dashboards
-│   └── karpenter/            # Node provisioning and scaling policies
+│   ├── argocd/
+│   │   ├── applicationsets/        # Auto-discovers environments from Git
+│   │   ├── rollouts/               # Canary deployment with Prometheus analysis
+│   │   ├── notifications/          # Slack alerts on sync/fail/degrade
+│   │   ├── image-updater/          # Auto image tag promotion
+│   │   └── sync-waves/             # Dependency-ordered deployment
+│   ├── apps/piggymetrics/
+│   │   ├── base/                   # 10 microservices + StatefulSets + Ingress
+│   │   └── overlays/dev|prod/      # Kustomize: env-specific replicas, resources
+│   ├── alerting/rules/             # SLO burn-rate + infra + app + DR + secrets alerts
+│   ├── alertmanager/               # Routing, Slack/PagerDuty, inhibition rules
+│   ├── observability/
+│   │   ├── service-monitors/       # Scrape targets for all services
+│   │   ├── pod-monitors/           # MongoDB, RabbitMQ, Ingress metrics
+│   │   ├── recording-rules/        # Pre-computed SLIs for fast dashboards
+│   │   ├── grafana-dashboards/     # Golden Signals + Infra + SLO (JSON-as-code)
+│   │   └── grafana-provisioning/   # Auto-load dashboards via sidecar
+│   ├── auto-remediation/
+│   │   ├── scripts/                # Crashloop restart, latency scaler, disk cleanup
+│   │   ├── cronjobs/               # Scheduled remediation (every 2-5 min)
+│   │   └── rbac/                   # Least-privilege service account
+│   ├── disaster-recovery/
+│   │   ├── backup-schedules.yaml   # Hourly/daily/weekly with PV hooks
+│   │   └── scripts/                # DR validation (weekly test)
+│   ├── secrets/                    # ClusterSecretStore + ExternalSecrets
+│   └── karpenter/                  # NodePool + EC2NodeClass (Spot optimization)
+├── tests/load/
+│   ├── gateway-load-test.js        # Ramp to 150 VUs, SLO thresholds
+│   ├── auth-spike-test.js          # 10x traffic spike simulation
+│   ├── soak-test.js                # 30-min stability (memory leak detection)
+│   └── Makefile                    # make gateway | auth | soak | test-dev
 ├── docs/
-│   ├── architecture.md       # Detailed architecture documentation
-│   └── adr/                  # Architecture Decision Records
-├── .gitignore
-├── LICENSE
-└── README.md
+│   ├── architecture.md             # System architecture
+│   ├── observability-architecture.md
+│   ├── secrets-management.md
+│   ├── auto-remediation.md
+│   ├── disaster-recovery.md        # RTO/RPO, restore procedures
+│   ├── adr/                        # Architecture Decision Records
+│   └── runbooks/                   # Incident response playbooks
+└── .github/workflows/              # CI: validate, scan, cost estimate
 ```
 
 ## 🛠️ Tech Stack
