@@ -1,0 +1,80 @@
+# KEDA ScaledObject: Account Service
+#
+# Combined scaling strategy:
+#   1. Scale UP on request rate (demand-driven)
+#   2. Scale UP on error rate (more pods = fresh connection pools)
+#   3. Never scale below 2 (critical service)
+#
+# The error-rate trigger is clever:
+#   - When error rate spikes, it often means connection pool exhaustion
+#   - Adding more pods = more connection pools = errors self-resolve
+#   - This is auto-remediation disguised as autoscaling
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: account-service-scaler
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: account-service
+    app.kubernetes.io/part-of: piggymetrics
+    app.kubernetes.io/managed-by: keda
+spec:
+  scaleTargetRef:
+    name: account-service
+  pollingInterval: 15
+  cooldownPeriod: 180
+  minReplicaCount: 2
+  maxReplicaCount: 8
+  triggers:
+    # Scale on request rate: 80 RPS per pod
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        metricName: account_requests_per_second
+        query: |
+          sum(rate(http_requests_total{namespace="piggymetrics", service="account-service"}[1m]))
+        threshold: "80"
+        activationThreshold: "5"
+
+    # Scale on error rate: if > 2% errors, add pods
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        metricName: account_error_rate
+        query: |
+          (
+            sum(rate(http_requests_total{namespace="piggymetrics", service="account-service", code=~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total{namespace="piggymetrics", service="account-service"}[2m]))
+          ) * 100
+        threshold: "2"          # Scale up if > 2% errors
+        activationThreshold: "0.5"
+
+    # Scale on active connections approaching limit
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        metricName: account_db_connections
+        query: |
+          sum(hikaricp_connections_active{namespace="piggymetrics", application="account-service"})
+          /
+          sum(hikaricp_connections_max{namespace="piggymetrics", application="account-service"})
+          * 100
+        threshold: "80"         # Scale when connection pool > 80% used
+        activationThreshold: "50"
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 2
+              periodSeconds: 30
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60   # Scale down 1 pod per minute max
