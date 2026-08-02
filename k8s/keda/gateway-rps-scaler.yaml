@@ -1,0 +1,65 @@
+# KEDA ScaledObject: Gateway
+#
+# Scales based on HTTP requests per second (from Prometheus).
+#
+# Why Prometheus-based scaling > CPU-based:
+#   - CPU tells you "pods are busy" but not "users are waiting"
+#   - RPS tells you "demand is increasing, add capacity before latency spikes"
+#   - Proactive scaling vs reactive scaling
+#
+# Target: 100 RPS per pod
+#   - At 200 RPS total → 2 pods
+#   - At 500 RPS total → 5 pods
+#   - At 1000 RPS total → 10 pods (max)
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: gateway-rps-scaler
+  namespace: piggymetrics
+  labels:
+    app.kubernetes.io/name: gateway
+    app.kubernetes.io/part-of: piggymetrics
+    app.kubernetes.io/managed-by: keda
+spec:
+  scaleTargetRef:
+    name: gateway
+  pollingInterval: 10           # Fast polling for user-facing service
+  cooldownPeriod: 180           # 3 min cooldown
+  minReplicaCount: 2            # Always keep 2 (user-facing, can't go to zero)
+  maxReplicaCount: 10
+  triggers:
+    # Primary trigger: HTTP requests per second
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        metricName: http_requests_per_second
+        query: |
+          sum(rate(http_requests_total{namespace="piggymetrics", service="gateway"}[1m]))
+        threshold: "100"        # Target 100 RPS per pod
+        activationThreshold: "10"  # Don't activate scaling below 10 RPS
+
+    # Secondary trigger: P95 latency > 300ms means we need more pods
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus-kube-prometheus-prometheus.observability.svc.cluster.local:9090
+        metricName: gateway_latency_p95
+        query: |
+          histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace="piggymetrics", service="gateway"}[2m])) by (le))
+        threshold: "0.3"        # Scale up when P95 > 300ms
+        activationThreshold: "0.1"
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 3
+              periodSeconds: 30   # Add up to 3 pods per 30s (fast scale for traffic spikes)
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Percent
+              value: 25
+              periodSeconds: 60   # Scale down 25% per minute (gradual)
